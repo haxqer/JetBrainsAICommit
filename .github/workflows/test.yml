@@ -1,0 +1,79 @@
+name: Test and Build
+
+on:
+  pull_request:
+    branches: [ master, main ]
+  push:
+    branches-ignore: [ master, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Make gradlew executable
+      run: chmod +x ./gradlew
+
+    - name: Run tests
+      run: ./gradlew test
+
+    - name: Build plugin
+      run: ./gradlew buildPlugin
+
+    - name: Verify plugin
+      run: ./gradlew verifyPlugin
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: plugin-artifacts-${{ github.sha }}
+        path: |
+          build/distributions/*.zip
+          build/reports/
+        retention-days: 7
+
+    - name: Test summary
+      if: always()
+      run: |
+        echo "## 🧪 Test and Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f build/distributions/*.zip ]; then
+          PLUGIN_FILE=$(ls build/distributions/*.zip | head -1)
+          PLUGIN_NAME=$(basename "$PLUGIN_FILE" .zip)
+          FILE_SIZE=$(ls -lh "$PLUGIN_FILE" | awk '{print $5}')
+          
+          echo "### ✅ Build Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- **Plugin**: $PLUGIN_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size**: $FILE_SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: Available in build artifacts" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+          echo "Plugin build was not successful. Check the logs above." >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Review test results and build logs" >> $GITHUB_STEP_SUMMARY
+        echo "- Download artifacts to test the plugin locally" >> $GITHUB_STEP_SUMMARY
+        echo "- Merge to main/master to trigger automatic release" >> $GITHUB_STEP_SUMMARY 
