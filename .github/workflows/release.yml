@@ -49,7 +49,6 @@ jobs:
     - name: Get latest tag
       id: get_tag
       run: |
-        # Get the latest tag, if no tags exist, start with v0.0.0
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
         echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
         echo "Latest tag: $LATEST_TAG"
@@ -58,24 +57,18 @@ jobs:
       id: calc_version
       run: |
         LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
-        
-        # Remove 'v' prefix if present
         VERSION=${LATEST_TAG#v}
-        
-        # Split version into parts
         IFS='.' read -ra VERSION_PARTS <<< "$VERSION"
         MAJOR=${VERSION_PARTS[0]:-0}
         MINOR=${VERSION_PARTS[1]:-0}
         PATCH=${VERSION_PARTS[2]:-0}
         
-        # Determine bump type
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           BUMP_TYPE="${{ github.event.inputs.version_bump }}"
         else
           BUMP_TYPE="patch"
         fi
         
-        # Calculate new version based on bump type
         case $BUMP_TYPE in
           major)
             MAJOR=$((MAJOR + 1))
@@ -112,7 +105,7 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git add build.gradle.kts
-        git commit -m "🔖 bump version to ${{ steps.calc_version.outputs.new_version }}" || exit 0
+        git commit -m "bump version to ${{ steps.calc_version.outputs.new_version }}" || exit 0
 
     - name: Make gradlew executable
       run: chmod +x ./gradlew
@@ -129,17 +122,12 @@ jobs:
     - name: Get plugin info
       id: plugin_info
       run: |
-        # Extract plugin name and file path
         PLUGIN_NAME=$(ls build/distributions/*.zip | head -1 | xargs basename .zip)
         PLUGIN_FILE="build/distributions/${PLUGIN_NAME}.zip"
-        
         echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
         echo "plugin_file=$PLUGIN_FILE" >> $GITHUB_OUTPUT
-        
         echo "Plugin name: $PLUGIN_NAME"
         echo "Plugin file: $PLUGIN_FILE"
-        
-        # Get file size
         FILE_SIZE=$(ls -lh "$PLUGIN_FILE" | awk '{print $5}')
         echo "plugin_size=$FILE_SIZE" >> $GITHUB_OUTPUT
         echo "Plugin size: $FILE_SIZE"
@@ -153,21 +141,18 @@ jobs:
     - name: Generate changelog
       id: changelog
       run: |
-        # Generate changelog from git commits since last tag
         LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
         
         if [ "$LATEST_TAG" = "v0.0.0" ]; then
-          cat > changelog.md << 'EOF'
-        🎉 Initial release of JetBrains AI Commits Plugin
-        
-        ## Features
-        ✨ Generate intelligent commit messages using AI
-        🔧 Configurable API settings (OpenAI compatible)
-        🎨 Custom prompt templates with variable substitution
-        ⚡ Real-time streaming support
-        😊 Optional emoji integration
-        🔄 Support for selected file changes only
-        EOF
+          echo "Initial release of JetBrains AI Commits Plugin" > changelog.md
+          echo "" >> changelog.md
+          echo "## Features" >> changelog.md
+          echo "- Generate intelligent commit messages using AI" >> changelog.md
+          echo "- Configurable API settings (OpenAI compatible)" >> changelog.md
+          echo "- Custom prompt templates with variable substitution" >> changelog.md
+          echo "- Real-time streaming support" >> changelog.md
+          echo "- Optional emoji integration" >> changelog.md
+          echo "- Support for selected file changes only" >> changelog.md
         else
           echo "## Changes since $LATEST_TAG" > changelog.md
           echo "" >> changelog.md
@@ -192,24 +177,17 @@ jobs:
 
     - name: Create plugin summary
       run: |
-        echo "## 🚀 Plugin Built and Released Successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "## Plugin Built and Released Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📦 Release Information" >> $GITHUB_STEP_SUMMARY
+        echo "### Release Information" >> $GITHUB_STEP_SUMMARY
         echo "- **Version**: ${{ steps.calc_version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Tag**: ${{ steps.calc_version.outputs.new_tag }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Bump Type**: ${{ steps.calc_version.outputs.bump_type }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Plugin Size**: ${{ steps.plugin_info.outputs.plugin_size }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
-        echo "- [📥 Download Plugin](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
-        echo "- [📋 Release Notes](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🛠️ Installation" >> $GITHUB_STEP_SUMMARY
-        echo "1. Download the plugin ZIP file from the release" >> $GITHUB_STEP_SUMMARY
-        echo "2. In your JetBrains IDE: **Settings** → **Plugins** → **⚙️** → **Install Plugin from Disk**" >> $GITHUB_STEP_SUMMARY
-        echo "3. Select the downloaded ZIP file" >> $GITHUB_STEP_SUMMARY
-        echo "4. Restart your IDE" >> $GITHUB_STEP_SUMMARY
+        echo "### Links" >> $GITHUB_STEP_SUMMARY
+        echo "- [Download Plugin](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
+        echo "- [Release Notes](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
 
     - name: Clean up
-      run: |
-        rm -f changelog.md 
+      run: rm -f changelog.md 
