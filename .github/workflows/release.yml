@@ -157,22 +157,23 @@ jobs:
         LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
         
         if [ "$LATEST_TAG" = "v0.0.0" ]; then
-          CHANGELOG="🎉 Initial release of JetBrains AI Commits Plugin
-
-## Features
-✨ Generate intelligent commit messages using AI
-🔧 Configurable API settings (OpenAI compatible)
-🎨 Custom prompt templates with variable substitution
-⚡ Real-time streaming support
-😊 Optional emoji integration
-🔄 Support for selected file changes only"
+          cat > changelog.md << 'EOF'
+        🎉 Initial release of JetBrains AI Commits Plugin
+        
+        ## Features
+        ✨ Generate intelligent commit messages using AI
+        🔧 Configurable API settings (OpenAI compatible)
+        🎨 Custom prompt templates with variable substitution
+        ⚡ Real-time streaming support
+        😊 Optional emoji integration
+        🔄 Support for selected file changes only
+        EOF
         else
-          CHANGELOG="## Changes since $LATEST_TAG"$'\n'
-          CHANGELOG+=$(git log $LATEST_TAG..HEAD --pretty=format:"- %s" --reverse | head -20)
+          echo "## Changes since $LATEST_TAG" > changelog.md
+          echo "" >> changelog.md
+          git log $LATEST_TAG..HEAD --pretty=format:"- %s" --reverse | head -20 >> changelog.md
         fi
         
-        # Save changelog to file to preserve formatting
-        echo "$CHANGELOG" > changelog.md
         echo "Generated changelog"
 
     - name: Create GitHub Release
