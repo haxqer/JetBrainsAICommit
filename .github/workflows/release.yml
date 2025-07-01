@@ -137,12 +137,23 @@ jobs:
         
         echo "Found built plugin: $BUILT_PLUGIN"
         
-        # Create a properly named plugin file
-        PLUGIN_NAME="ai-commits-${{ steps.calc_version.outputs.new_version }}.zip"
-        PLUGIN_FILE="build/distributions/$PLUGIN_NAME"
+        # Get the filename without path
+        BUILT_FILENAME=$(basename "$BUILT_PLUGIN")
         
-        # Copy to properly named file
-        cp "$BUILT_PLUGIN" "$PLUGIN_FILE"
+        # Define expected plugin filename
+        EXPECTED_NAME="ai-commits-${{ steps.calc_version.outputs.new_version }}.zip"
+        
+        # Check if the built file already has the correct name
+        if [ "$BUILT_FILENAME" = "$EXPECTED_NAME" ]; then
+          echo "Plugin file already has correct name: $BUILT_FILENAME"
+          PLUGIN_FILE="$BUILT_PLUGIN"
+          PLUGIN_NAME="$BUILT_FILENAME"
+        else
+          echo "Renaming plugin file from $BUILT_FILENAME to $EXPECTED_NAME"
+          PLUGIN_FILE="build/distributions/$EXPECTED_NAME"
+          PLUGIN_NAME="$EXPECTED_NAME"
+          cp "$BUILT_PLUGIN" "$PLUGIN_FILE"
+        fi
         
         # Get file size
         FILE_SIZE=$(ls -lh "$PLUGIN_FILE" | awk '{print $5}')
@@ -152,7 +163,7 @@ jobs:
         echo "plugin_file=$PLUGIN_FILE" >> $GITHUB_OUTPUT
         echo "plugin_size=$FILE_SIZE" >> $GITHUB_OUTPUT
         
-        echo "Plugin file created: $PLUGIN_FILE"
+        echo "Final plugin file: $PLUGIN_FILE"
         echo "Plugin size: $FILE_SIZE"
         
         # List all files in distributions directory for debugging
