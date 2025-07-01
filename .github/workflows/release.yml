@@ -124,18 +124,40 @@ jobs:
     - name: Verify plugin
       run: ./gradlew verifyPlugin
 
-    - name: Get plugin info
+    - name: Prepare plugin artifacts
       id: plugin_info
       run: |
-        PLUGIN_NAME=$(ls build/distributions/*.zip | head -1 | xargs basename .zip)
-        PLUGIN_FILE="build/distributions/${PLUGIN_NAME}.zip"
+        # Find the built plugin ZIP file
+        BUILT_PLUGIN=$(find build/distributions -name "*.zip" -type f | head -1)
+        
+        if [ -z "$BUILT_PLUGIN" ]; then
+          echo "Error: No plugin ZIP file found in build/distributions/"
+          exit 1
+        fi
+        
+        echo "Found built plugin: $BUILT_PLUGIN"
+        
+        # Create a properly named plugin file
+        PLUGIN_NAME="ai-commits-${{ steps.calc_version.outputs.new_version }}.zip"
+        PLUGIN_FILE="build/distributions/$PLUGIN_NAME"
+        
+        # Copy to properly named file
+        cp "$BUILT_PLUGIN" "$PLUGIN_FILE"
+        
+        # Get file size
+        FILE_SIZE=$(ls -lh "$PLUGIN_FILE" | awk '{print $5}')
+        
+        # Set outputs
         echo "plugin_name=$PLUGIN_NAME" >> $GITHUB_OUTPUT
         echo "plugin_file=$PLUGIN_FILE" >> $GITHUB_OUTPUT
-        echo "Plugin name: $PLUGIN_NAME"
-        echo "Plugin file: $PLUGIN_FILE"
-        FILE_SIZE=$(ls -lh "$PLUGIN_FILE" | awk '{print $5}')
         echo "plugin_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+        
+        echo "Plugin file created: $PLUGIN_FILE"
         echo "Plugin size: $FILE_SIZE"
+        
+        # List all files in distributions directory for debugging
+        echo "Contents of build/distributions/:"
+        ls -la build/distributions/
 
     - name: Create and push tag
       run: |
@@ -158,10 +180,20 @@ jobs:
           echo "- Real-time streaming support" >> changelog.md
           echo "- Optional emoji integration" >> changelog.md
           echo "- Support for selected file changes only" >> changelog.md
+          echo "" >> changelog.md
+          echo "## Installation" >> changelog.md
+          echo "1. Download the ai-commits-${{ steps.calc_version.outputs.new_version }}.zip file" >> changelog.md
+          echo "2. In your JetBrains IDE: Settings > Plugins > Install Plugin from Disk" >> changelog.md
+          echo "3. Select the downloaded ZIP file and restart your IDE" >> changelog.md
         else
           echo "## Changes since $LATEST_TAG" > changelog.md
           echo "" >> changelog.md
           git log $LATEST_TAG..HEAD --pretty=format:"- %s" --reverse | head -20 >> changelog.md
+          echo "" >> changelog.md
+          echo "## Installation" >> changelog.md
+          echo "1. Download the ai-commits-${{ steps.calc_version.outputs.new_version }}.zip file" >> changelog.md
+          echo "2. In your JetBrains IDE: Settings > Plugins > Install Plugin from Disk" >> changelog.md
+          echo "3. Select the downloaded ZIP file and restart your IDE" >> changelog.md
         fi
         
         echo "Generated changelog"
@@ -180,6 +212,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Verify release assets
+      run: |
+        echo "Release created successfully!"
+        echo "Plugin file uploaded: ${{ steps.plugin_info.outputs.plugin_name }}"
+        echo "Download URL will be: https://github.com/${{ github.repository }}/releases/download/${{ steps.calc_version.outputs.new_tag }}/${{ steps.plugin_info.outputs.plugin_name }}"
+
     - name: Create plugin summary
       run: |
         echo "## Plugin Built and Released Successfully!" >> $GITHUB_STEP_SUMMARY
@@ -188,11 +226,18 @@ jobs:
         echo "- **Version**: ${{ steps.calc_version.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Tag**: ${{ steps.calc_version.outputs.new_tag }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Bump Type**: ${{ steps.calc_version.outputs.bump_type }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Plugin File**: ${{ steps.plugin_info.outputs.plugin_name }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Plugin Size**: ${{ steps.plugin_info.outputs.plugin_size }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Links" >> $GITHUB_STEP_SUMMARY
-        echo "- [Download Plugin](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
-        echo "- [Release Notes](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
+        echo "### Download Links" >> $GITHUB_STEP_SUMMARY
+        echo "- [📥 Download Plugin](https://github.com/${{ github.repository }}/releases/download/${{ steps.calc_version.outputs.new_tag }}/${{ steps.plugin_info.outputs.plugin_name }})" >> $GITHUB_STEP_SUMMARY
+        echo "- [📋 Release Notes](https://github.com/${{ github.repository }}/releases/tag/${{ steps.calc_version.outputs.new_tag }})" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Installation Instructions" >> $GITHUB_STEP_SUMMARY
+        echo "1. Download the plugin ZIP file using the link above" >> $GITHUB_STEP_SUMMARY
+        echo "2. In your JetBrains IDE: **Settings** → **Plugins** → **⚙️** → **Install Plugin from Disk**" >> $GITHUB_STEP_SUMMARY
+        echo "3. Select the downloaded ZIP file" >> $GITHUB_STEP_SUMMARY
+        echo "4. Restart your IDE to activate the plugin" >> $GITHUB_STEP_SUMMARY
 
     - name: Clean up
       run: rm -f changelog.md 
