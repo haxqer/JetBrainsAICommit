@@ -1,0 +1,42 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# Kotlin
+*.kt.metadata
+
+# Build artifacts
+out/
+target/
+
+# IDE files
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local properties
+local.properties
+
+# Signing files
+*.jks
+*.keystore 

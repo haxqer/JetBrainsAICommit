@@ -1,0 +1,43 @@
+<idea-plugin>
+    <id>com.github.haxqer.ai-commits</id>
+    <name>AI Commits</name>
+    <vendor email="support@haxqer.com" url="https://github.com/haxqer">haxqer</vendor>
+
+    <description><![CDATA[
+      AI Commits is a plugin that generates your commit messages by using git diff and LLMs.<br>
+      <br>
+      Features:<br>
+      • Generate commit message from git diff using LLM<br>
+      • Compute diff only from the selected files and lines in the commit dialog<br>
+      • Create your own prompt for commit message generation<br>
+      • Use predefined variables and hint to customize your prompt<br>
+      • Support saving and using custom API host (OpenAI format) and key<br>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable 
+            parentId="tools" 
+            instance="com.github.haxqer.aicommits.settings.AICommitsConfigurable"
+            id="com.github.haxqer.aicommits.settings.AICommitsConfigurable"
+            displayName="AI Commits"/>
+        
+        <applicationService 
+            serviceImplementation="com.github.haxqer.aicommits.services.AICommitsService"/>
+            
+        <applicationService 
+            serviceImplementation="com.github.haxqer.aicommits.settings.AICommitsSettings"/>
+    </extensions>
+
+    <actions>
+        <action id="com.github.haxqer.aicommits.actions.GenerateCommitMessageAction" 
+                class="com.github.haxqer.aicommits.actions.GenerateCommitMessageAction" 
+                text="Generate AI Commit Message" 
+                description="Generate commit message using AI">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+        </action>
+    </actions>
+</idea-plugin> 
