@@ -19,6 +19,11 @@ on:
           - minor
           - major
 
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
