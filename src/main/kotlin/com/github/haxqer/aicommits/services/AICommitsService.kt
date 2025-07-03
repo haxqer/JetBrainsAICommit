@@ -449,56 +449,118 @@ class AICommitsService {
         // Remove common prefixes that LLMs might add
         cleaned = cleaned.replace(Regex("^(Here's a|Here is a|Commit message:|Generated commit message:)\\s*", RegexOption.MULTILINE), "")
         
-        // Remove extra whitespace and newlines but preserve intentional line breaks
-        cleaned = cleaned.replace(Regex("\\n\\s*\\n\\s*\\n+"), "\n\n") // Multiple blank lines -> double line break
+        // Remove extra whitespace and newlines
+        cleaned = cleaned.replace(Regex("\\n\\s*\\n+"), "\n")
         cleaned = cleaned.trim()
         
-        // For multi-line responses, keep the structure but ensure it's reasonable for a commit message
+        // Split into lines and find the best commit message line
         val lines = cleaned.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
         
         if (lines.isEmpty()) {
             LOG.warn("AI Commits: No meaningful content after cleaning: '$content'")
-            return "chore: update files"
+            return "chore: update multiple files"
         }
         
-        // If it's a single line, return it directly
-        if (lines.size == 1) {
-            return lines[0]
+        // Strategy 1: Look for conventional commit format lines
+        val conventionalCommitPattern = Regex("^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\\(.+\\))?:\\s*.+")
+        val conventionalCommits = lines.filter { conventionalCommitPattern.matches(it) && it.length <= 100 }
+        
+        if (conventionalCommits.isNotEmpty()) {
+            // Return the most comprehensive one (longest within reasonable limits)
+            val bestConventional = conventionalCommits.maxByOrNull { 
+                // Prefer longer messages that mention multiple files/areas
+                val score = it.length + 
+                    (if (it.contains("and")) 10 else 0) +
+                    (if (it.contains("multiple")) 15 else 0) +
+                    (if (it.contains("across")) 15 else 0) +
+                    (if (it.contains("files")) 10 else 0)
+                score
+            }
+            if (bestConventional != null && bestConventional.length >= 20) {
+                LOG.info("AI Commits: Selected conventional commit: '$bestConventional'")
+                return bestConventional
+            }
         }
         
-        // For multi-line content, check if it looks like a proper commit message format
-        val firstLine = lines[0]
+        // Strategy 2: Look for any line with colon (type: description format)
+        val colonLines = lines.filter { 
+            it.contains(":") && 
+            !it.endsWith(":") && 
+            it.length >= 15 && 
+            it.length <= 100 &&
+            !it.startsWith("#") &&
+            !it.startsWith("//")
+        }
         
-        // If the first line looks like a proper commit title (contains colon, reasonable length)
-        if (firstLine.contains(":") && firstLine.length <= 100 && firstLine.length >= 10) {
-            // Check if there are additional meaningful lines (not just formatting)
-            val additionalLines = lines.drop(1).filter { line ->
-                line.length > 5 && !line.startsWith("#") && !line.startsWith("---")
+        if (colonLines.isNotEmpty()) {
+            // Score lines based on how comprehensive they seem
+            val scoredLines = colonLines.map { line ->
+                val score = line.length +
+                    (if (line.lowercase().contains("multiple")) 20 else 0) +
+                    (if (line.lowercase().contains("across")) 15 else 0) +
+                    (if (line.lowercase().contains("and")) 10 else 0) +
+                    (if (line.lowercase().contains("files")) 10 else 0) +
+                    (if (line.lowercase().contains("update")) 5 else 0) +
+                    (if (line.lowercase().contains("improve")) 8 else 0) +
+                    (if (line.lowercase().contains("enhance")) 8 else 0) +
+                    (if (line.lowercase().contains("implement")) 8 else 0) +
+                    (if (line.lowercase().contains("add")) 5 else 0)
+                line to score
             }
             
-            if (additionalLines.isNotEmpty() && lines.size <= 5) {
-                // Return multi-line commit message (title + body)
-                val result = StringBuilder(firstLine)
-                if (additionalLines.isNotEmpty()) {
-                    result.append("\n\n")
-                    result.append(additionalLines.take(3).joinToString("\n"))
-                }
-                return result.toString()
+            val bestLine = scoredLines.maxByOrNull { it.second }?.first
+            if (bestLine != null) {
+                LOG.info("AI Commits: Selected scored line: '$bestLine'")
+                return bestLine
             }
         }
         
-        // Fallback: find the best single line that looks like a commit message
-        for (line in lines) {
-            if (line.length > 10 && line.contains(":") && !line.endsWith(':') && !line.startsWith("##")) {
-                return line
+        // Strategy 3: Find the most substantial line that looks like a commit message
+        val substantialLines = lines.filter { it.length >= 15 && it.length <= 100 }
+        if (substantialLines.isNotEmpty()) {
+            // Prefer lines that seem to describe multiple changes
+            val multiFileLines = substantialLines.filter { line ->
+                val lower = line.lowercase()
+                lower.contains("multiple") || lower.contains("several") || 
+                lower.contains("across") || lower.contains("and") ||
+                lower.contains("files") || lower.contains("components")
             }
+            
+            if (multiFileLines.isNotEmpty()) {
+                val selected = multiFileLines.maxByOrNull { it.length }!!
+                LOG.info("AI Commits: Selected multi-file line: '$selected'")
+                return selected
+            }
+            
+            // Fallback to longest substantial line
+            val selected = substantialLines.maxByOrNull { it.length }!!
+            LOG.info("AI Commits: Selected substantial line: '$selected'")
+            return selected
         }
         
-        // Last resort: return the first substantial line
-        val substantialLine = lines.firstOrNull { it.length > 10 } ?: lines.firstOrNull() ?: "chore: update files"
+        // Strategy 4: Last resort - take the first meaningful line and enhance it
+        val firstLine = lines.firstOrNull { it.length > 10 } ?: "chore: update files"
+        val enhanced = if (!firstLine.contains(":") && !firstLine.lowercase().contains("multiple")) {
+            // Try to make it more comprehensive if it seems too narrow
+            when {
+                firstLine.lowercase().contains("update") -> "chore: update multiple files with enhancements"
+                firstLine.lowercase().contains("fix") -> "fix: resolve issues across multiple components"
+                firstLine.lowercase().contains("add") -> "feat: add features and improvements across files"
+                else -> "chore: improve multiple components - $firstLine"
+            }
+        } else {
+            firstLine
+        }
         
-        LOG.info("AI Commits: Cleaned response from '${content.take(100)}...' to '$substantialLine'")
-        return substantialLine
+        // Ensure it's not too long
+        val final = if (enhanced.length > 72) {
+            enhanced.take(69) + "..."
+        } else {
+            enhanced
+        }
+        
+        LOG.info("AI Commits: Final enhanced commit message: '$final'")
+        return final
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

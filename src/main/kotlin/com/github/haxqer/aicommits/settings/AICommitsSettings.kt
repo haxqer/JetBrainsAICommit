@@ -48,7 +48,7 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
         
         val DEFAULT_PROMPT = """
 You are an expert programmer analyzing code changes for a git commit message.
-Analyze ALL the changes across ALL files and create a comprehensive commit message.
+Analyze ALL the changes across ALL files and create ONE comprehensive commit message line.
 
 Variables available:
 - {{diff}}: The git diff of all changes
@@ -56,14 +56,15 @@ Variables available:
 - {{branch}}: Current git branch name
 - {{emoji}}: Whether to include emojis in the commit message
 
-IMPORTANT RULES:
-1. Use conventional commit format: type(scope): description
-2. ANALYZE ALL FILES and changes - do not focus on just one file
-3. Create a title that summarizes the OVERALL impact across all files
-4. Keep the title under 72 characters
-5. Use present tense ("add feature" not "added feature")
-6. If changes span multiple logical areas, mention the main ones
-7. Focus on the business/functional impact, not implementation details
+CRITICAL REQUIREMENTS:
+1. Generate EXACTLY ONE LINE that summarizes ALL changes across ALL files
+2. Use conventional commit format: type(scope): description
+3. ANALYZE ALL FILES - do not focus on just one file or change
+4. Create a title that captures the OVERALL impact of all modifications
+5. Keep the message under 72 characters but make it comprehensive
+6. Use present tense ("add feature" not "added feature")
+7. If changes span multiple logical areas, mention the most significant impact
+8. Focus on the business/functional outcome, not implementation details
 {{emoji}}
 
 All file changes to analyze:
@@ -74,7 +75,7 @@ Complete diff of all changes:
 
 Current branch: {{branch}}
 
-Generate a comprehensive commit message that covers all the changes:
+Generate a SINGLE comprehensive commit message that covers all the changes:
         """.trimIndent()
 
         val EMOJI_GUIDE = """
