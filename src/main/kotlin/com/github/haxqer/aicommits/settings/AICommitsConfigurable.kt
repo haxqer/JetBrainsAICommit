@@ -21,6 +21,7 @@ class AICommitsConfigurable : Configurable {
     private lateinit var modelField: JTextField
     private lateinit var maxTokensField: JTextField
     private lateinit var temperatureSpinner: JSpinner
+    private lateinit var maxDiffSizeField: JTextField
     private lateinit var customPromptArea: JTextArea
     private lateinit var useCustomPromptCheckBox: JCheckBox
     private lateinit var enableStreamingCheckBox: JCheckBox
@@ -58,6 +59,12 @@ class AICommitsConfigurable : Configurable {
                 row("Temperature:") {
                     temperatureSpinner = spinner(0.0..2.0, 0.1)
                         .comment("Randomness of the output (0.0 = deterministic, 2.0 = very random)")
+                        .component
+                }
+                row("Max Diff Size:") {
+                    maxDiffSizeField = intTextField()
+                        .columns(COLUMNS_TINY)
+                        .comment("Maximum characters of diff content to send to AI (larger values help with multi-file commits)")
                         .component
                 }
                 row {
@@ -117,6 +124,7 @@ class AICommitsConfigurable : Configurable {
         val currentModel = modelField.text
         val currentMaxTokens = maxTokensField.text.toIntOrNull() ?: 0
         val currentTemperature = temperatureSpinner.value as Double
+        val currentMaxDiffSize = maxDiffSizeField.text.toIntOrNull() ?: 0
         val currentCustomPrompt = customPromptArea.text
         val currentUseCustomPrompt = useCustomPromptCheckBox.isSelected
         val currentEnableStreaming = enableStreamingCheckBox.isSelected
@@ -127,6 +135,7 @@ class AICommitsConfigurable : Configurable {
                 currentModel != settings.model ||
                 currentMaxTokens != settings.maxTokens ||
                 currentTemperature != settings.temperature ||
+                currentMaxDiffSize != settings.maxDiffSize ||
                 currentCustomPrompt != settings.customPrompt ||
                 currentUseCustomPrompt != settings.useCustomPrompt ||
                 currentEnableStreaming != settings.enableStreaming ||
@@ -140,6 +149,7 @@ class AICommitsConfigurable : Configurable {
         settings.model = modelField.text
         settings.maxTokens = maxTokensField.text.toIntOrNull() ?: 1024
         settings.temperature = temperatureSpinner.value as Double
+        settings.maxDiffSize = maxDiffSizeField.text.toIntOrNull() ?: 8000
         settings.customPrompt = customPromptArea.text
         settings.useCustomPrompt = useCustomPromptCheckBox.isSelected
         settings.enableStreaming = enableStreamingCheckBox.isSelected
@@ -163,6 +173,7 @@ class AICommitsConfigurable : Configurable {
         modelField.text = settings.model
         maxTokensField.text = settings.maxTokens.toString()
         temperatureSpinner.value = settings.temperature
+        maxDiffSizeField.text = settings.maxDiffSize.toString()
         customPromptArea.text = if (settings.customPrompt.isEmpty()) AICommitsSettings.DEFAULT_PROMPT else settings.customPrompt
         useCustomPromptCheckBox.isSelected = settings.useCustomPrompt
         enableStreamingCheckBox.isSelected = settings.enableStreaming

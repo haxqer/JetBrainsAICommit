@@ -19,6 +19,7 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
     var useCustomPrompt: Boolean = false
     var enableStreaming: Boolean = true
     var enableEmoji: Boolean = true
+    var maxDiffSize: Int = 8000
 
     override fun getState(): AICommitsSettings = this
 
@@ -30,6 +31,9 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
         temperature = state.temperature
         customPrompt = state.customPrompt.ifEmpty { DEFAULT_PROMPT }
         useCustomPrompt = state.useCustomPrompt
+        enableStreaming = state.enableStreaming
+        enableEmoji = state.enableEmoji
+        maxDiffSize = if (state.maxDiffSize > 0) state.maxDiffSize else 8000
     }
 
     override fun noStateLoaded() {

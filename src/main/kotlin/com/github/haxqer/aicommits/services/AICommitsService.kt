@@ -90,11 +90,142 @@ class AICommitsService {
             "6. Do not use emojis in the commit message"
         }
         
+        // Smart diff truncation to ensure all files are represented
+        val processedDiff = intelligentDiffTruncation(diff, settings.maxDiffSize, files)
+        
         return template
-            .replace("{{diff}}", diff.take(4000)) // Limit diff size
+            .replace("{{diff}}", processedDiff)
             .replace("{{files}}", files.joinToString("\n"))
             .replace("{{branch}}", branch)
             .replace("{{emoji}}", emojiInstructions)
+    }
+
+    /**
+     * Intelligently truncate diff to ensure all files are represented when possible
+     */
+    private fun intelligentDiffTruncation(diff: String, maxSize: Int, files: List<String>): String {
+        if (diff.length <= maxSize) {
+            return diff
+        }
+
+        // Split diff by files (look for "diff --git" markers)
+        val fileDiffs = mutableMapOf<String, String>()
+        val lines = diff.split('\n')
+        var currentFile = ""
+        var currentDiffLines = mutableListOf<String>()
+
+        for (line in lines) {
+            if (line.startsWith("diff --git")) {
+                // Save previous file's diff
+                if (currentFile.isNotEmpty()) {
+                    fileDiffs[currentFile] = currentDiffLines.joinToString("\n")
+                }
+                
+                // Extract filename from diff --git a/file b/file
+                currentFile = line.substringAfter("b/").takeIf { it.isNotEmpty() } 
+                    ?: line.substringAfter("a/").takeIf { it.isNotEmpty() }
+                    ?: "unknown"
+                currentDiffLines = mutableListOf(line)
+            } else {
+                currentDiffLines.add(line)
+            }
+        }
+        
+        // Don't forget the last file
+        if (currentFile.isNotEmpty()) {
+            fileDiffs[currentFile] = currentDiffLines.joinToString("\n")
+        }
+
+        // If we couldn't parse by files, fall back to simple truncation
+        if (fileDiffs.isEmpty()) {
+            return diff.take(maxSize) + if (diff.length > maxSize) "\n... (truncated)" else ""
+        }
+
+        // Calculate how much space each file should get
+        val availableSpace = maxSize - 100 // Reserve space for truncation messages
+        val spacePerFile = availableSpace / fileDiffs.size
+        val minSpacePerFile = 200 // Minimum meaningful diff size per file
+
+        val result = StringBuilder()
+        var remainingSpace = availableSpace
+        var processedFiles = 0
+
+        for ((filename, fileDiff) in fileDiffs) {
+            // Adjust space allocation for remaining files
+            val filesLeft = fileDiffs.size - processedFiles
+            val allocatedSpace = if (filesLeft == 1) {
+                remainingSpace
+            } else {
+                maxOf(minSpacePerFile, remainingSpace / filesLeft)
+            }
+
+            if (remainingSpace < minSpacePerFile) {
+                result.append("\n... (${filesLeft} more files truncated)")
+                break
+            }
+
+            if (fileDiff.length <= allocatedSpace) {
+                result.append(fileDiff)
+                remainingSpace -= fileDiff.length
+            } else {
+                // Truncate this file's diff intelligently
+                val truncatedDiff = truncateFileDiff(fileDiff, allocatedSpace)
+                result.append(truncatedDiff)
+                remainingSpace -= truncatedDiff.length
+            }
+            
+            if (processedFiles < fileDiffs.size - 1) {
+                result.append("\n")
+            }
+            
+            processedFiles++
+        }
+
+        return result.toString()
+    }
+
+    /**
+     * Truncate a single file's diff while preserving important information
+     */
+    private fun truncateFileDiff(fileDiff: String, maxSize: Int): String {
+        val lines = fileDiff.split('\n')
+        val result = mutableListOf<String>()
+        var currentSize = 0
+        
+        // Always include the header lines (diff --git, index, +++, ---)
+        var i = 0
+        while (i < lines.size && (lines[i].startsWith("diff --git") || 
+                                   lines[i].startsWith("index") || 
+                                   lines[i].startsWith("+++") || 
+                                   lines[i].startsWith("---") ||
+                                   lines[i].startsWith("@@"))) {
+            result.add(lines[i])
+            currentSize += lines[i].length + 1
+            i++
+            
+            if (currentSize >= maxSize * 0.3) break // Don't use more than 30% for headers
+        }
+        
+        // Add content lines until we hit the limit
+        var addedLines = 0
+        var removedLines = 0
+        while (i < lines.size && currentSize < maxSize - 50) { // Reserve space for summary
+            val line = lines[i]
+            result.add(line)
+            currentSize += line.length + 1
+            
+            if (line.startsWith("+") && !line.startsWith("+++")) addedLines++
+            if (line.startsWith("-") && !line.startsWith("---")) removedLines++
+            
+            i++
+        }
+        
+        // Add summary if we truncated
+        if (i < lines.size) {
+            result.add("... (truncated, ~${addedLines} additions, ~${removedLines} deletions)")
+        }
+        
+        return result.joinToString("\n")
     }
 
     private suspend fun callLLMAPI(prompt: String): String = withContext(Dispatchers.IO) {
