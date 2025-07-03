@@ -87,17 +87,56 @@ class AICommitsService {
         val emojiInstructions = if (settings.enableEmoji) {
             AICommitsSettings.EMOJI_GUIDE
         } else {
-            "6. Do not use emojis in the commit message"
+            "8. Do not use emojis in the commit message"
         }
         
         // Smart diff truncation to ensure all files are represented
         val processedDiff = intelligentDiffTruncation(diff, settings.maxDiffSize, files)
         
+        // Generate file change summary
+        val filesSummary = generateFileChangesSummary(processedDiff, files)
+        
         return template
             .replace("{{diff}}", processedDiff)
-            .replace("{{files}}", files.joinToString("\n"))
+            .replace("{{files}}", filesSummary)
             .replace("{{branch}}", branch)
             .replace("{{emoji}}", emojiInstructions)
+    }
+
+    /**
+     * Generate a summary of file changes to help AI understand the scope
+     */
+    private fun generateFileChangesSummary(diff: String, files: List<String>): String {
+        val summary = StringBuilder()
+        
+        // Add basic file list
+        summary.append("Modified files (${files.size}):\n")
+        files.forEach { file ->
+            summary.append("- $file")
+            
+            // Try to extract change statistics from diff
+            val filePattern = "diff --git.*?b/$file"
+            val additionsPattern = "\\+[^+]".toRegex()
+            val deletionsPattern = "^-[^-]".toRegex(RegexOption.MULTILINE)
+            
+            // Simple statistics extraction
+            val fileDiffSection = diff.lines().takeWhile { !it.startsWith("diff --git") || it.contains(file) }
+                .dropWhile { !it.contains(file) }
+                .takeWhile { line -> !line.startsWith("diff --git") || line.contains(file) }
+                .joinToString("\n")
+            
+            if (fileDiffSection.isNotEmpty()) {
+                val additions = additionsPattern.findAll(fileDiffSection).count()
+                val deletions = deletionsPattern.findAll(fileDiffSection).count()
+                
+                if (additions > 0 || deletions > 0) {
+                    summary.append(" (+$additions -$deletions)")
+                }
+            }
+            summary.append("\n")
+        }
+        
+        return summary.toString()
     }
 
     /**
@@ -141,44 +180,58 @@ class AICommitsService {
             return diff.take(maxSize) + if (diff.length > maxSize) "\n... (truncated)" else ""
         }
 
-        // Calculate how much space each file should get
-        val availableSpace = maxSize - 100 // Reserve space for truncation messages
-        val spacePerFile = availableSpace / fileDiffs.size
-        val minSpacePerFile = 200 // Minimum meaningful diff size per file
-
+        // Smart allocation: prioritize smaller files and ensure minimum representation
         val result = StringBuilder()
-        var remainingSpace = availableSpace
-        var processedFiles = 0
-
-        for ((filename, fileDiff) in fileDiffs) {
-            // Adjust space allocation for remaining files
-            val filesLeft = fileDiffs.size - processedFiles
-            val allocatedSpace = if (filesLeft == 1) {
-                remainingSpace
-            } else {
-                maxOf(minSpacePerFile, remainingSpace / filesLeft)
-            }
-
-            if (remainingSpace < minSpacePerFile) {
-                result.append("\n... (${filesLeft} more files truncated)")
-                break
-            }
-
-            if (fileDiff.length <= allocatedSpace) {
+        val reserveSpace = 200 // Reserve space for summary
+        var availableSpace = maxSize - reserveSpace
+        
+        // Sort files by diff size to process smaller ones first
+        val sortedFileDiffs = fileDiffs.toList().sortedBy { it.second.length }
+        val processedFiles = mutableSetOf<String>()
+        
+        // First pass: include smaller files completely
+        for ((filename, fileDiff) in sortedFileDiffs) {
+            if (fileDiff.length <= availableSpace / (fileDiffs.size - processedFiles.size) * 1.5) {
+                if (result.isNotEmpty()) result.append("\n")
                 result.append(fileDiff)
-                remainingSpace -= fileDiff.length
-            } else {
-                // Truncate this file's diff intelligently
-                val truncatedDiff = truncateFileDiff(fileDiff, allocatedSpace)
-                result.append(truncatedDiff)
-                remainingSpace -= truncatedDiff.length
+                availableSpace -= fileDiff.length
+                processedFiles.add(filename)
             }
+        }
+        
+        // Second pass: truncate remaining larger files
+        val remainingFiles = sortedFileDiffs.filter { it.first !in processedFiles }
+        if (remainingFiles.isNotEmpty()) {
+            val spacePerRemainingFile = availableSpace / remainingFiles.size
+            val minSpacePerFile = 300 // Minimum meaningful diff size per file
             
-            if (processedFiles < fileDiffs.size - 1) {
-                result.append("\n")
+            for ((filename, fileDiff) in remainingFiles) {
+                val allocatedSpace = maxOf(minSpacePerFile, spacePerRemainingFile)
+                
+                if (availableSpace >= minSpacePerFile) {
+                    if (result.isNotEmpty()) result.append("\n")
+                    
+                    if (fileDiff.length <= allocatedSpace) {
+                        result.append(fileDiff)
+                        availableSpace -= fileDiff.length
+                    } else {
+                        val truncatedDiff = truncateFileDiff(fileDiff, allocatedSpace)
+                        result.append(truncatedDiff)
+                        availableSpace -= truncatedDiff.length
+                    }
+                    processedFiles.add(filename)
+                } else {
+                    break
+                }
             }
-            
-            processedFiles++
+        }
+        
+        // Add summary for unprocessed files
+        val unprocessedCount = fileDiffs.size - processedFiles.size
+        if (unprocessedCount > 0) {
+            result.append("\n... ($unprocessedCount more files truncated: ")
+            result.append(fileDiffs.keys.filter { it !in processedFiles }.joinToString(", "))
+            result.append(")")
         }
 
         return result.toString()
@@ -396,31 +449,56 @@ class AICommitsService {
         // Remove common prefixes that LLMs might add
         cleaned = cleaned.replace(Regex("^(Here's a|Here is a|Commit message:|Generated commit message:)\\s*", RegexOption.MULTILINE), "")
         
-        // Remove extra whitespace and newlines
-        cleaned = cleaned.replace(Regex("\\n\\s*\\n"), "\n")
+        // Remove extra whitespace and newlines but preserve intentional line breaks
+        cleaned = cleaned.replace(Regex("\\n\\s*\\n\\s*\\n+"), "\n\n") // Multiple blank lines -> double line break
         cleaned = cleaned.trim()
         
-        // If the result is multiline, take only the first meaningful line as commit message
+        // For multi-line responses, keep the structure but ensure it's reasonable for a commit message
         val lines = cleaned.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
-        if (lines.isNotEmpty()) {
-            // For commit messages, usually the first line is the most important
-            val firstLine = lines[0]
-            
-            // If first line looks like a proper commit message, use it
-            if (firstLine.length > 10 && !firstLine.endsWith(':')) {
-                return firstLine
+        
+        if (lines.isEmpty()) {
+            LOG.warn("AI Commits: No meaningful content after cleaning: '$content'")
+            return "chore: update files"
+        }
+        
+        // If it's a single line, return it directly
+        if (lines.size == 1) {
+            return lines[0]
+        }
+        
+        // For multi-line content, check if it looks like a proper commit message format
+        val firstLine = lines[0]
+        
+        // If the first line looks like a proper commit title (contains colon, reasonable length)
+        if (firstLine.contains(":") && firstLine.length <= 100 && firstLine.length >= 10) {
+            // Check if there are additional meaningful lines (not just formatting)
+            val additionalLines = lines.drop(1).filter { line ->
+                line.length > 5 && !line.startsWith("#") && !line.startsWith("---")
             }
             
-            // Otherwise, look for the first substantial line
-            for (line in lines) {
-                if (line.length > 10 && !line.endsWith(':') && !line.startsWith("##")) {
-                    return line
+            if (additionalLines.isNotEmpty() && lines.size <= 5) {
+                // Return multi-line commit message (title + body)
+                val result = StringBuilder(firstLine)
+                if (additionalLines.isNotEmpty()) {
+                    result.append("\n\n")
+                    result.append(additionalLines.take(3).joinToString("\n"))
                 }
+                return result.toString()
             }
         }
         
-        LOG.info("AI Commits: Cleaned response from '${content.take(100)}...' to '$cleaned'")
-        return cleaned
+        // Fallback: find the best single line that looks like a commit message
+        for (line in lines) {
+            if (line.length > 10 && line.contains(":") && !line.endsWith(':') && !line.startsWith("##")) {
+                return line
+            }
+        }
+        
+        // Last resort: return the first substantial line
+        val substantialLine = lines.firstOrNull { it.length > 10 } ?: lines.firstOrNull() ?: "chore: update files"
+        
+        LOG.info("AI Commits: Cleaned response from '${content.take(100)}...' to '$substantialLine'")
+        return substantialLine
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

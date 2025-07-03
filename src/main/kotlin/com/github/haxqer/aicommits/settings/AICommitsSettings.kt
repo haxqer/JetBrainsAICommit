@@ -19,7 +19,7 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
     var useCustomPrompt: Boolean = false
     var enableStreaming: Boolean = true
     var enableEmoji: Boolean = true
-    var maxDiffSize: Int = 8000
+    var maxDiffSize: Int = 12000
 
     override fun getState(): AICommitsSettings = this
 
@@ -33,7 +33,7 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
         useCustomPrompt = state.useCustomPrompt
         enableStreaming = state.enableStreaming
         enableEmoji = state.enableEmoji
-        maxDiffSize = if (state.maxDiffSize > 0) state.maxDiffSize else 8000
+        maxDiffSize = if (state.maxDiffSize > 0) state.maxDiffSize else 12000
     }
 
     override fun noStateLoaded() {
@@ -47,36 +47,38 @@ class AICommitsSettings : PersistentStateComponent<AICommitsSettings> {
         fun getInstance(): AICommitsSettings = ApplicationManager.getApplication().getService(AICommitsSettings::class.java)
         
         val DEFAULT_PROMPT = """
-You are an expert programmer, and you are trying to write a commit message for this change.
-Generate a concise git commit message written in present tense for the following code changes:
+You are an expert programmer analyzing code changes for a git commit message.
+Analyze ALL the changes across ALL files and create a comprehensive commit message.
 
 Variables available:
-- {{diff}}: The git diff of the changes
-- {{files}}: List of changed files
+- {{diff}}: The git diff of all changes
+- {{files}}: List of all changed files
 - {{branch}}: Current git branch name
 - {{emoji}}: Whether to include emojis in the commit message
 
-Rules:
+IMPORTANT RULES:
 1. Use conventional commit format: type(scope): description
-2. Keep the message under 72 characters for the title
-3. Use present tense ("add feature" not "added feature")
-4. Focus on the why and what, not how
-5. If there are multiple changes, focus on the most significant one
+2. ANALYZE ALL FILES and changes - do not focus on just one file
+3. Create a title that summarizes the OVERALL impact across all files
+4. Keep the title under 72 characters
+5. Use present tense ("add feature" not "added feature")
+6. If changes span multiple logical areas, mention the main ones
+7. Focus on the business/functional impact, not implementation details
 {{emoji}}
 
-The diff:
-{{diff}}
-
-Files changed:
+All file changes to analyze:
 {{files}}
+
+Complete diff of all changes:
+{{diff}}
 
 Current branch: {{branch}}
 
-Generate a commit message:
+Generate a comprehensive commit message that covers all the changes:
         """.trimIndent()
 
         val EMOJI_GUIDE = """
-6. Add appropriate emojis to make the commit message more expressive and human-friendly:
+8. Add appropriate emojis to make the commit message more expressive and human-friendly:
    - ✨ for new features
    - 🐛 for bug fixes
    - 🔧 for configuration changes
