@@ -158,132 +158,119 @@ class GenerateCommitMessageAction : AnAction() {
 
     private fun setCommitMessage(commitWorkflowUi: CommitWorkflowUi, message: String) {
         try {
-            LOG.info("AI Commits: Setting commit message with ${message.lines().size} lines: '${message.take(100)}...'")
-            
-            // Try to access the commit message component
-            val commitMessageComponent = commitWorkflowUi.commitMessageUi
+            LOG.info("AI Commits: Setting commit message: '${message.take(100)}...'")
             
             // Method 1: Try CommitMessage interface
+            val commitMessageComponent = commitWorkflowUi.commitMessageUi
             if (commitMessageComponent is CommitMessage) {
-                LOG.info("AI Commits: Using CommitMessage.setCommitMessage() method")
+                LOG.info("AI Commits: Using CommitMessage interface")
                 commitMessageComponent.setCommitMessage(message)
-                
-                // Verify the message was set correctly
-                val currentText = commitMessageComponent.comment
-                LOG.info("AI Commits: After setting, current text: '${currentText.take(100)}...'")
-                
-                if (currentText != message) {
-                    LOG.warn("AI Commits: CommitMessage.setCommitMessage() didn't preserve full text, trying alternative method")
-                    // Try setting the comment property directly
-                    try {
-                        commitMessageComponent.comment = message
-                        LOG.info("AI Commits: Successfully set via comment property")
-                    } catch (e: Exception) {
-                        LOG.warn("AI Commits: Failed to set via comment property", e)
-                    }
-                }
-            } else {
-                LOG.info("AI Commits: Using commitMessageUi.text property")
-                // Method 2: Try text property
-                commitWorkflowUi.commitMessageUi.text = message
-                
-                // Verify the message was set
-                val currentText = commitWorkflowUi.commitMessageUi.text
-                LOG.info("AI Commits: After setting text property, current text: '${currentText.take(100)}...'")
+                return
             }
             
-            // Method 3: Try to access the underlying text component directly
+            // Method 2: Try text property
             try {
-                val textComponent = commitMessageComponent
+                commitWorkflowUi.commitMessageUi.text = message
+                LOG.info("AI Commits: Successfully set via text property")
+                return
+            } catch (e: Exception) {
+                LOG.debug("AI Commits: Text property failed", e)
+            }
+            
+            // Method 3: Reflection fallback
+            try {
+                val componentClass = commitMessageComponent.javaClass
                 
-                // Try to find and access text area/editor component
-                val componentClass = textComponent.javaClass
-                LOG.info("AI Commits: CommitMessageUi component class: ${componentClass.name}")
-                
-                // Look for common text component methods
+                // Try textField
                 try {
                     val textField = componentClass.getDeclaredField("textField")
                     textField.isAccessible = true
-                    val textFieldComponent = textField.get(textComponent)
-                    
-                    if (textFieldComponent != null) {
-                        val setTextMethod = textFieldComponent.javaClass.getMethod("setText", String::class.java)
-                        setTextMethod.invoke(textFieldComponent, message)
-                        LOG.info("AI Commits: Successfully set text via textField reflection")
+                    val textComponent = textField.get(commitMessageComponent)
+                    if (textComponent != null) {
+                        val setText = textComponent.javaClass.getMethod("setText", String::class.java)
+                        setText.invoke(textComponent, message)
+                        LOG.info("AI Commits: Set via textField reflection")
+                        return
                     }
                 } catch (e: Exception) {
                     LOG.debug("AI Commits: textField reflection failed", e)
-                    
-                    // Try alternative field names
-                    try {
-                        val editorField = componentClass.getDeclaredField("editor")
-                        editorField.isAccessible = true
-                        val editorComponent = editorField.get(textComponent)
-                        
-                        if (editorComponent != null) {
-                            val documentMethod = editorComponent.javaClass.getMethod("getDocument")
-                            val document = documentMethod.invoke(editorComponent)
-                            val insertStringMethod = document.javaClass.getMethod("insertString", Int::class.java, String::class.java, javax.swing.text.AttributeSet::class.java)
-                            
-                            // Clear existing text first
-                            val removeMethod = document.javaClass.getMethod("remove", Int::class.java, Int::class.java)
-                            val lengthMethod = document.javaClass.getMethod("getLength")
-                            val length = lengthMethod.invoke(document) as Int
-                            removeMethod.invoke(document, 0, length)
-                            
-                            // Insert new text
-                            insertStringMethod.invoke(document, 0, message, null)
-                            LOG.info("AI Commits: Successfully set text via editor document")
-                        }
-                    } catch (e2: Exception) {
-                        LOG.debug("AI Commits: editor reflection failed", e2)
-                    }
-                }
-            } catch (e: Exception) {
-                LOG.debug("AI Commits: Direct component access failed", e)
-            }
-            
-        } catch (e: Exception) {
-            LOG.warn("AI Commits: Failed to set commit message in UI", e)
-            
-            // Final fallback: show the message in a dialog
-            try {
-                // Try to get project from commitWorkflowUi
-                val project = when {
-                    commitWorkflowUi.javaClass.methods.any { it.name == "getProject" } -> {
-                        commitWorkflowUi.javaClass.getMethod("getProject").invoke(commitWorkflowUi) as? Project
-                    }
-                    else -> null
                 }
                 
-                if (project != null) {
-                    // Show dialog with option to copy to clipboard
-                    val action = Messages.showYesNoDialog(
-                        project,
-                        "Generated commit message:\n\n$message\n\nWould you like to copy this to clipboard?",
-                        "AI Generated Commit Message",
-                        "Copy to Clipboard",
-                        "OK",
-                        Messages.getInformationIcon()
-                    )
-                    
-                    if (action == Messages.YES) {
-                        // Copy to clipboard
-                        try {
-                            val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
-                            val stringSelection = java.awt.datatransfer.StringSelection(message)
-                            clipboard.setContents(stringSelection, null)
-                            LOG.info("AI Commits: Copied message to clipboard")
-                        } catch (clipboardError: Exception) {
-                            LOG.warn("AI Commits: Failed to copy to clipboard", clipboardError)
+                // Try editor field
+                try {
+                    val editorField = componentClass.getDeclaredField("editor")
+                    editorField.isAccessible = true
+                    val editor = editorField.get(commitMessageComponent)
+                    if (editor != null) {
+                        val getDocument = editor.javaClass.getMethod("getDocument")
+                        val document = getDocument.invoke(editor)
+                        
+                        val getLength = document.javaClass.getMethod("getLength")
+                        val currentLength = getLength.invoke(document) as Int
+                        
+                        if (currentLength > 0) {
+                            val remove = document.javaClass.getMethod("remove", Int::class.java, Int::class.java)
+                            remove.invoke(document, 0, currentLength)
                         }
+                        
+                        val insertString = document.javaClass.getMethod("insertString", Int::class.java, String::class.java, javax.swing.text.AttributeSet::class.java)
+                        insertString.invoke(document, 0, message, null)
+                        LOG.info("AI Commits: Set via editor document")
+                        return
                     }
-                } else {
-                    LOG.error("AI Commits: Could not get project reference for fallback dialog")
+                } catch (e: Exception) {
+                    LOG.debug("AI Commits: editor reflection failed", e)
                 }
-            } catch (dialogError: Exception) {
-                LOG.error("AI Commits: Failed to show fallback dialog", dialogError)
+            } catch (e: Exception) {
+                LOG.debug("AI Commits: Reflection failed", e)
             }
+            
+            LOG.warn("AI Commits: All methods failed, showing dialog")
+            showCommitMessageDialog(commitWorkflowUi, message)
+            
+        } catch (e: Exception) {
+            LOG.error("AI Commits: Fatal error setting commit message", e)
+            showCommitMessageDialog(commitWorkflowUi, message)
+        }
+    }
+    
+    private fun showCommitMessageDialog(commitWorkflowUi: CommitWorkflowUi, message: String) {
+        try {
+            // Try to get project
+            var project: Project? = null
+            try {
+                val methods = commitWorkflowUi.javaClass.methods
+                val getProjectMethod = methods.find { it.name == "getProject" }
+                if (getProjectMethod != null) {
+                    project = getProjectMethod.invoke(commitWorkflowUi) as? Project
+                }
+            } catch (e: Exception) {
+                LOG.debug("AI Commits: Could not get project", e)
+            }
+            
+            if (project != null) {
+                val result = Messages.showYesNoDialog(
+                    project,
+                    "Generated commit message:\n\n$message\n\nCopy to clipboard?",
+                    "AI Commit Message",
+                    "Copy",
+                    "Cancel",
+                    Messages.getInformationIcon()
+                )
+                
+                if (result == Messages.YES) {
+                    try {
+                        val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+                        val selection = java.awt.datatransfer.StringSelection(message)
+                        clipboard.setContents(selection, null)
+                        LOG.info("AI Commits: Copied to clipboard")
+                    } catch (e: Exception) {
+                        LOG.warn("AI Commits: Failed to copy to clipboard", e)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LOG.error("AI Commits: Dialog failed", e)
         }
     }
 
